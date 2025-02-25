@@ -1,0 +1,5 @@
+-- Посмотреть все индексы ко всем таблицам базы данных cfdb:
+SELECT DISTINCT TABLE_NAME, INDEX_NAME
+FROM INFORMATION_SCHEMA.STATISTICS
+WHERE TABLE_SCHEMA = 'cfdb';
+
