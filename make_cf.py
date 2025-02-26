@@ -143,18 +143,45 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         -> pd.core.frame.DataFrame:
 
     sql_query = f'''
-        (SELECT
-            t1.period_name,
-            t1.account_id AS `account_id`,
-            t3.account_name AS `account_name`,
-            t4.entity_1C_name AS `entity_name`,
-            t4.inn AS `inn`,
-            SUM(t1.amount) AS `{table_name}`
-        FROM {table_name} AS t1
-        JOIN accounts AS t3 ON t3.id = t1.account_id
-        JOIN entities AS t4 ON t4.id = t1.entity_id
-        GROUP BY t1.period_name, t1.account_id, t1.entity_id
-        ORDER BY t1.account_id, t1.entity_id);
+        SELECT
+            t0.period_name,
+            t1.account_id,
+            t1.entity_id,
+            SUM(t1.amount) AS amount_sum,
+            t2.amount_sum_by_account,
+            t3.amount_sum_by_account_entity
+        FROM periods AS t0
+        LEFT JOIN {table_name} AS t1
+        ON t0.period_name = t1.period_name
+        LEFT JOIN (
+            SELECT account_id, SUM(amount) AS amount_sum_by_account
+            FROM {table_name}
+            GROUP BY account_id) AS t2
+        ON t1.account_id = t2.account_id
+        LEFT JOIN (
+            SELECT
+                account_id,
+                entity_id,
+                SUM(amount) AS amount_sum_by_account_entity
+            FROM {table_name}
+            GROUP BY account_id, entity_id) AS t3
+        ON t1.account_id = t3.account_id AND t1.entity_id = t3.entity_id
+        GROUP BY t0.period_name, t1.account_id, t1.entity_id
+        ORDER BY
+            t2.amount_sum_by_account DESC,
+            t3.amount_sum_by_account_entity DESC;
+#         (SELECT
+#             t1.period_name,
+#             t1.account_id AS `account_id`,
+#             t3.account_name AS `account_name`,
+#             t4.entity_1C_name AS `entity_name`,
+#             t4.inn AS `inn`,
+#             SUM(t1.amount) AS `{table_name}`
+#         FROM {table_name} AS t1
+#         JOIN accounts AS t3 ON t3.id = t1.account_id
+#         JOIN entities AS t4 ON t4.id = t1.entity_id
+#         GROUP BY t1.period_name, t1.account_id, t1.entity_id
+#         ORDER BY t1.account_id, t1.entity_id);
         '''
 
     df = select_data(sql_query)
@@ -345,12 +372,14 @@ def cf_to_excel2(
     if exists(file_path):
         remove(file_path)
      
-    # activities = ['op', 'inv', 'fin', 'equity', 'vgo']
-    activities = ['inv']
+    activities = ['op', 'inv', 'fin', 'equity', 'vgo']
+    # activities = ['inv']
 
     for activity in activities:
         cf_ins = 'ins_' + activity
         df_ins = select_function(cf_ins)
+        print(df_ins)
+        break
         dfp_ins = pivot_and_sort_data_frame_with_two_analytics(df_ins)
 
 
@@ -384,20 +413,20 @@ def cf_to_excel2(
 
 
 if __name__ == '__main__':
-    file_name = 'cf_by_entity.xlsx'
-    select_function = select_sum_amount_group_by_entity
-    column_width = [32, 14, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_entity.xlsx'
+    # select_function = select_sum_amount_group_by_entity
+    # column_width = [32, 14, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
-    file_name = 'cf_by_article.xlsx'
-    select_function = select_sum_amount_group_by_article
-    column_width = [32, 0, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_article.xlsx'
+    # select_function = select_sum_amount_group_by_article
+    # column_width = [32, 0, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
-    file_name = 'cf_by_account.xlsx'
-    select_function = select_sum_amount_group_by_account
-    column_width = [8, 32, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_account.xlsx'
+    # select_function = select_sum_amount_group_by_account
+    # column_width = [8, 32, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
     file_name = 'cf_by_account_entity.xlsx'
     select_function = select_sum_amount_group_by_account_entity
