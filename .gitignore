@@ -3,5 +3,5 @@ rpts/
 loads/
 dev/
 venv/
-py/__pycache__
+**/__pycache__
 
