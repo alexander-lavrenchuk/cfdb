@@ -2,4 +2,6 @@ config/db_connection_config.py
 rpts/
 loads/
 dev/
+venv/
+py/__pycache__
 
