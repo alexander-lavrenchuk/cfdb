@@ -418,6 +418,61 @@ def format_sheet(wb_path: str, sh_name: str, column_width: list[int]) -> None:
     wb.save(wb_path)
 
 
+def format_sheet2(wb_path: str, sh_name: str, column_width: list[int]) -> None:
+    wb = openpyxl.load_workbook(wb_path)
+    sh = wb[sh_name]
+
+    # df = pd.read_excel(wb_path, sheet_name=sh_name)
+    # column_B_width = 16 if df.iloc[:, 1].count() else 0
+
+    # sh.column_dimensions['A'].width = 36
+    # sh.column_dimensions['B'].width = column_B_width
+
+    for col in range(1, 5):
+        width = column_width[col - 1]
+        if width > 0:
+            sh.column_dimensions[get_column_letter(col)].width = width
+        else:
+            sh.column_dimensions[get_column_letter(col)].hidden = True
+
+    # sh.column_dimensions['A'].width = column_width[0]
+    # sh.column_dimensions['B'].width = column_width[1]
+
+    min_row = 1
+    max_row = sh.max_row
+    min_col = 5
+    max_col = sh.max_column
+    cell_range = sh.iter_cols(
+        min_row=min_row,
+        max_row=max_row,
+        min_col=min_col,
+        max_col=max_col)
+
+    for row in range(min_row, max_row + 1):
+        sh['A' + str(row)].alignment = \
+            openpyxl.styles.Alignment(horizontal='left')
+
+        sh['B' + str(row)].alignment = \
+            openpyxl.styles.Alignment(horizontal='left')
+
+
+        sh['C' + str(row)].alignment = \
+            openpyxl.styles.Alignment(horizontal='left')
+
+        sh['D' + str(row)].alignment = \
+            openpyxl.styles.Alignment(horizontal='left')
+
+    for col in range(min_col, max_col + 1):
+        sh.column_dimensions[get_column_letter(col)].width = column_width[4]
+
+    for row in cell_range:
+        for cell in row:
+            cell.number_format = '#,##0.00'
+
+    wb.save(wb_path)
+    wb.close()
+
+
 def cf_to_excel(
     select_function: Callable[[str], pd.core.frame.DataFrame],
     file_name: str, column_width: list[int]) -> None:
@@ -525,32 +580,34 @@ def cf_to_excel2(
                 header=False,
                 startrow=start_row)
 
-        # format_sheet(wb_path=file_path,
-        #     sh_name=activity,
-        #     column_width=column_width)
+        print('Start formatting')
+        format_sheet2(wb_path=file_path,
+            sh_name=activity,
+            column_width=column_width)
+        print('End formatting')
 
     print(f'CF model saved to {file_path}')
 
 
 if __name__ == '__main__':
-    file_name = 'cf_by_entity.xlsx'
-    select_function = select_sum_amount_group_by_entity
-    column_width = [32, 14, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_entity.xlsx'
+    # select_function = select_sum_amount_group_by_entity
+    # column_width = [32, 14, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
-    file_name = 'cf_by_article.xlsx'
-    select_function = select_sum_amount_group_by_article
-    column_width = [32, 0, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_article.xlsx'
+    # select_function = select_sum_amount_group_by_article
+    # column_width = [32, 0, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
-    file_name = 'cf_by_account.xlsx'
-    select_function = select_sum_amount_group_by_account
-    column_width = [8, 32, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_account.xlsx'
+    # select_function = select_sum_amount_group_by_account
+    # column_width = [8, 32, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
     file_name = 'cf_by_account_entity.xlsx'
     select_function = select_sum_amount_group_by_account_entity
-    column_width = [8, 32, 18]
+    column_width = [8, 32, 34, 14, 18]
     cf_to_excel2(select_function, file_name, column_width)
 
     # raise KeyboardInterrupt
