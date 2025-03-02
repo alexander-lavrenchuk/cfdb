@@ -263,6 +263,13 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
     dfp = pd.concat([dfp_totals, dfp])
     dfp.loc['Total'] = dfp.loc['Total'].fillna('')
 
+    df_periods = select_data('SELECT period_name FROM periods;')
+    all_periods_set = set(df_periods.period_name)
+    missing_periods_set = all_periods_set - set(dfp.columns)
+    if len(missing_periods_set) > 0:
+        for period in missing_periods_set:
+            dfp.insert(loc=dfp.shape[1], column=period, value=0)
+
     dfp.sort_index(
         axis=1,
         inplace=True)
@@ -590,20 +597,20 @@ def cf_to_excel2(
 
 
 if __name__ == '__main__':
-    # file_name = 'cf_by_entity.xlsx'
-    # select_function = select_sum_amount_group_by_entity
-    # column_width = [32, 14, 18]
-    # cf_to_excel(select_function, file_name, column_width)
+    file_name = 'cf_by_entity.xlsx'
+    select_function = select_sum_amount_group_by_entity
+    column_width = [32, 14, 18]
+    cf_to_excel(select_function, file_name, column_width)
 
-    # file_name = 'cf_by_article.xlsx'
-    # select_function = select_sum_amount_group_by_article
-    # column_width = [32, 0, 18]
-    # cf_to_excel(select_function, file_name, column_width)
+    file_name = 'cf_by_article.xlsx'
+    select_function = select_sum_amount_group_by_article
+    column_width = [32, 0, 18]
+    cf_to_excel(select_function, file_name, column_width)
 
-    # file_name = 'cf_by_account.xlsx'
-    # select_function = select_sum_amount_group_by_account
-    # column_width = [8, 32, 18]
-    # cf_to_excel(select_function, file_name, column_width)
+    file_name = 'cf_by_account.xlsx'
+    select_function = select_sum_amount_group_by_account
+    column_width = [8, 32, 18]
+    cf_to_excel(select_function, file_name, column_width)
 
     file_name = 'cf_by_account_entity.xlsx'
     select_function = select_sum_amount_group_by_account_entity
