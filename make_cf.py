@@ -189,6 +189,7 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         GROUP BY period_name, account_id, entity_id;
         '''
     df_amounts = select_data(sql_query)
+    df_amounts.entity_id = df_amounts.entity_id.fillna(-1)
     
     sql_query = f'''
         SELECT
@@ -213,6 +214,9 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         ORDER BY account_id, entity_id;
         '''
     df_amounts_by_account_entity = select_data(sql_query)
+    df_amounts_by_account_entity.entity_id = \
+        df_amounts_by_account_entity.entity_id.fillna(-1)
+
     df_amounts_by_account_entity.set_index(
         keys=['account_id', 'entity_id'],
         inplace=True)
@@ -225,6 +229,7 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         aggfunc='sum',
         fill_value=0,
         margins=False,
+        # dropna=False,
         sort=False)
 
     dfp = dfp.join(
@@ -259,9 +264,9 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         inplace=True)
 
     dfp_totals = dfp.sum(axis=0,
-        numeric_only=True).to_frame('Total').T
+        numeric_only=True).to_frame('All').T
     dfp = pd.concat([dfp_totals, dfp])
-    dfp.loc['Total'] = dfp.loc['Total'].fillna('')
+    dfp.loc['All'] = dfp.loc['All'].fillna('')
 
     df_periods = select_data('SELECT period_name FROM periods;')
     all_periods_set = set(df_periods.period_name)
@@ -270,6 +275,10 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         for period in missing_periods_set:
             dfp.insert(loc=dfp.shape[1], column=period, value=0)
 
+    dfp.rename(
+        columns={'amount_sum_by_account_entity': 'All'},
+        inplace=True)
+
     dfp.sort_index(
         axis=1,
         inplace=True)
@@ -277,6 +286,7 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
     move_column(data_frame=dfp,
         column_name='account_id',
         loc=0)
+    dfp.iloc[0, 0] = 'All'
 
     move_column(data_frame=dfp,
         column_name='account_name',
@@ -533,6 +543,7 @@ def cf_to_excel2(
         remove(file_path)
      
     activities = ['op', 'inv', 'fin', 'equity', 'vgo']
+    # activities = ['op']
 
     for activity in activities:
         cf_ins = 'ins_' + activity
@@ -587,11 +598,11 @@ def cf_to_excel2(
                 header=False,
                 startrow=start_row)
 
-        print('Start formatting')
+        # print('Start formatting')
         format_sheet2(wb_path=file_path,
             sh_name=activity,
             column_width=column_width)
-        print('End formatting')
+        # print('End formatting')
 
     print(f'CF model saved to {file_path}')
 
