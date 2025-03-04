@@ -125,30 +125,6 @@ def select_sum_amount_group_by_account(table_name: str) \
     return df
 
 
-# (SELECT
-#     t1.period_name,
-#     t1.account_id AS `account_id`,
-#     t3.account_name AS `account_name`,
-#     t4.entity_1C_name AS `entity_name`,
-#     t4.inn AS `inn`,
-#     SUM(t1.amount) AS `ins_op`
-# FROM ins_op AS t1
-# JOIN accounts AS t3 ON t3.id = t1.account_id
-# JOIN entities AS t4 ON t4.id = t1.entity_id
-# GROUP BY t1.period_name, t1.account_id, t1.entity_id)
-# UNION
-# (SELECT
-#     period_name,
-#     'Not specified' AS `account_id`,
-#     'Not specified' AS `account_name`,
-#     'Not specified' AS `entity_name`,
-#     'Not specified' AS `inn`,
-#     SUM(amount)
-# FROM ins_op
-# WHERE account_id IS NULL
-# GROUP BY period_name);
-
-
 def select_sum_amount_group_by_account_entity(table_name: str) \
         -> pd.core.frame.DataFrame:
 
@@ -171,13 +147,12 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         FROM entities;
         '''
     df_entities = select_data(sql_query)
-    # df_entities.set_index(
-    #     keys='id',
-    #     inplace=True)
+    df_entities.set_index(
+        keys='id',
+        inplace=True)
     df_entities.inn = df_entities.inn.astype('str')
     df_entities.inn = df_entities.inn.str.replace('.0', '')
     df_entities.inn = df_entities.inn.str.replace('nan', '')
-    # print(df_entities)
     
     sql_query = f'''
         SELECT
@@ -229,7 +204,6 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         aggfunc='sum',
         fill_value=0,
         margins=False,
-        # dropna=False,
         sort=False)
 
     dfp = dfp.join(
@@ -247,6 +221,7 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         inplace=True)
 
     dfp.reset_index(inplace=True)
+
     dfp = dfp.merge(
         right=df_accounts,
         how='left',
@@ -254,13 +229,15 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
         right_on='id',
         validate='m:1')
     dfp.entity_id = dfp.entity_id.astype('int')
+
     dfp = dfp.merge(
         right=df_entities,
         how='left',
         left_on='entity_id',
         right_on='id',
         validate='m:1')
-    dfp.drop(columns=['entity_id', 'id', 'amount_sum_by_account'],
+    
+    dfp.drop(columns=['entity_id', 'amount_sum_by_account'],
         inplace=True)
 
     dfp_totals = dfp.sum(axis=0,
@@ -333,7 +310,6 @@ def pivot_and_sort_data_frame_with_single_analytics(
         fill_value=0,
         margins=True)
     dfp = dfp.sort_values('All', ascending=False, axis=0)
-    # dfp = dfp.drop('All')
 
     # remove rows with only zeroes
     dfp = dfp[~(dfp == 0).all(axis=1)]
@@ -341,62 +317,9 @@ def pivot_and_sort_data_frame_with_single_analytics(
     return dfp
 
 
-# def pivot_and_sort_data_frame_with_two_analytics(
-#         df: pd.core.frame.DataFrame) \
-#         -> pd.core.frame.DataFrame:
-# 
-#     beg_date, end_date = get_min_max_dates()
-#     df_periods = get_periods(beg_date, end_date)
-# 
-#     dfm = df_periods.merge(df, how='outer', on=['period_name'])
-#     column_numbers = dfm.shape[1]
-#     dfm.iloc[:, column_numbers - 5] = \
-#         dfm.iloc[:, column_numbers - 5].fillna('Not specified')
-#     dfm.iloc[:, column_numbers - 4] = \
-#         dfm.iloc[:, column_numbers - 4].fillna('Not specified')
-#     dfm.iloc[:, column_numbers - 3] = \
-#         dfm.iloc[:, column_numbers - 3].fillna('Not specified')
-#     dfm.iloc[:, column_numbers - 2] = \
-#         dfm.iloc[:, column_numbers - 2].fillna('Not specified')
-#     dfm.iloc[:, column_numbers - 1] = \
-#         dfm.iloc[:, column_numbers - 1].fillna(0)
-# 
-#     columns = dfm.columns.tolist()
-#     periods = columns[0]
-#     analytics1_id = columns[3]
-#     analytics1_name = columns[4]
-#     analytics2_id = columns[5]
-#     analytics2_name = columns[6]
-#     values = columns[7]
-# 
-#     dfp = dfm.pivot_table(
-#         index=[analytics1_id,
-#             analytics1_name,
-#             analytics2_id,
-#             analytics2_name],
-#         columns=periods,
-#         values=values,
-#         aggfunc='sum',
-#         fill_value=0,
-#         margins=True)
-#     dfp = dfp.sort_values('All', ascending=False, axis=0)
-#     # dfp = dfp.drop('All')
-# 
-#     # remove rows with only zeroes
-#     dfp = dfp[~(dfp == 0).all(axis=1)]
-# 
-#     return dfp
-
-
 def format_sheet(wb_path: str, sh_name: str, column_width: list[int]) -> None:
     wb = openpyxl.load_workbook(wb_path)
     sh = wb[sh_name]
-
-    # df = pd.read_excel(wb_path, sheet_name=sh_name)
-    # column_B_width = 16 if df.iloc[:, 1].count() else 0
-
-    # sh.column_dimensions['A'].width = 36
-    # sh.column_dimensions['B'].width = column_B_width
 
     for col in range(1, 3):
         width = column_width[col - 1]
@@ -404,9 +327,6 @@ def format_sheet(wb_path: str, sh_name: str, column_width: list[int]) -> None:
             sh.column_dimensions[get_column_letter(col)].width = width
         else:
             sh.column_dimensions[get_column_letter(col)].hidden = True
-
-    # sh.column_dimensions['A'].width = column_width[0]
-    # sh.column_dimensions['B'].width = column_width[1]
 
     min_row = 1
     max_row = sh.max_row
@@ -439,21 +359,12 @@ def format_sheet2(wb_path: str, sh_name: str, column_width: list[int]) -> None:
     wb = openpyxl.load_workbook(wb_path)
     sh = wb[sh_name]
 
-    # df = pd.read_excel(wb_path, sheet_name=sh_name)
-    # column_B_width = 16 if df.iloc[:, 1].count() else 0
-
-    # sh.column_dimensions['A'].width = 36
-    # sh.column_dimensions['B'].width = column_B_width
-
     for col in range(1, 5):
         width = column_width[col - 1]
         if width > 0:
             sh.column_dimensions[get_column_letter(col)].width = width
         else:
             sh.column_dimensions[get_column_letter(col)].hidden = True
-
-    # sh.column_dimensions['A'].width = column_width[0]
-    # sh.column_dimensions['B'].width = column_width[1]
 
     min_row = 1
     max_row = sh.max_row
@@ -499,7 +410,6 @@ def cf_to_excel(
         remove(file_path)
      
     activities = ['op', 'inv', 'fin', 'equity', 'vgo']
-    # activities = ['inv']
 
     for activity in activities:
         cf_ins = 'ins_' + activity
@@ -543,23 +453,10 @@ def cf_to_excel2(
         remove(file_path)
      
     activities = ['op', 'inv', 'fin', 'equity', 'vgo']
-    # activities = ['op']
 
     for activity in activities:
         cf_ins = 'ins_' + activity
-        # df_ins = select_function(cf_ins)
         dfp_ins = select_function(cf_ins)
-        # dfp_ins = pd.pivot_table(
-        #         data=df_ins,
-        #         values='amount_sum',
-        #         index=['account_id', 'entity_id'],
-        #         columns='period_name',
-        #         aggfunc='sum',
-        #         fill_value=0,
-        #         margins=True,
-        #         sort=False)
-        # dfp_ins = pivot_and_sort_data_frame_with_two_analytics(df_ins)
-        # dfp_ins.sort_index(axis=1, inplace=True)
 
         writer_mode = 'a' if exists(file_path) else 'w'
         with pd.ExcelWriter(file_path, mode=writer_mode) as writer:  
@@ -571,19 +468,7 @@ def cf_to_excel2(
                 freeze_panes=(1, 4))
         
         cf_outs = 'outs_' + activity
-        # df_outs = select_function(cf_outs)
         dfp_outs = select_function(cf_outs)
-        # dfp_outs = pd.pivot_table(
-        #         data=df_outs,
-        #         values='amount_sum',
-        #         index=['account_id', 'entity_id'],
-        #         columns='period_name',
-        #         aggfunc='sum',
-        #         fill_value=0,
-        #         margins=True,
-        #         sort=False)
-        # dfp_outs = pivot_and_sort_data_frame_with_two_analytics(df_outs)
-        # dfp_outs.sort_index(axis=1, inplace=True)
         
         start_row = writer.sheets[activity].max_row + 1
 
@@ -598,11 +483,9 @@ def cf_to_excel2(
                 header=False,
                 startrow=start_row)
 
-        # print('Start formatting')
         format_sheet2(wb_path=file_path,
             sh_name=activity,
             column_width=column_width)
-        # print('End formatting')
 
     print(f'CF model saved to {file_path}')
 
