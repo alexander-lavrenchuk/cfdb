@@ -1,8 +1,9 @@
-from config.db_connection_config import host, port, user, password, db_name
+# from config.db_connection_config import host, port, user, password, db_name
 import pandas as pd
 from py.mysql_db import select_data, get_min_max_dates
 from py.card51 import get_periods
-from config.config import abs_accurancy, reports_directory_path
+# from config.config import abs_accurancy, reports_directory_path
+from config.config import reports_directory_path
 from os.path import join, exists
 from os import remove
 import openpyxl
@@ -10,7 +11,7 @@ from openpyxl.utils import get_column_letter
 from collections.abc import Callable
 
 
-def move_column(data_frame: pd.core.frame.DataFrame,
+def move_column(data_frame: pd.DataFrame,
     column_name: str, loc: int):
 
     col = data_frame.pop(column_name)
@@ -21,7 +22,7 @@ def move_column(data_frame: pd.core.frame.DataFrame,
 
 
 def select_sum_amount_group_by_entity(table_name: str) \
-        -> pd.core.frame.DataFrame:
+        -> pd.DataFrame:
 
     sql_query = f'''
         (SELECT
@@ -55,7 +56,7 @@ def select_sum_amount_group_by_entity(table_name: str) \
 
 
 def select_sum_amount_group_by_article(table_name: str) \
-        -> pd.core.frame.DataFrame:
+        -> pd.DataFrame:
 
     articles_table_name = 'income_articles' if 'ins_' in table_name \
         else 'outcome_articles'
@@ -92,7 +93,7 @@ def select_sum_amount_group_by_article(table_name: str) \
 
 
 def select_sum_amount_group_by_account(table_name: str) \
-        -> pd.core.frame.DataFrame:
+        -> pd.DataFrame:
 
     sql_query = f'''
         (SELECT
@@ -126,7 +127,7 @@ def select_sum_amount_group_by_account(table_name: str) \
 
 
 def select_sum_amount_group_by_account_entity(table_name: str) \
-        -> pd.core.frame.DataFrame:
+        -> pd.DataFrame:
 
     sql_query = f'''
         SELECT
@@ -281,8 +282,8 @@ def select_sum_amount_group_by_account_entity(table_name: str) \
 
 
 def pivot_and_sort_data_frame_with_single_analytics(
-        df: pd.core.frame.DataFrame) \
-        -> pd.core.frame.DataFrame:
+        df: pd.DataFrame) \
+        -> pd.DataFrame:
 
     beg_date, end_date = get_min_max_dates()
     df_periods = get_periods(beg_date, end_date)
@@ -491,20 +492,20 @@ def cf_to_excel2(
 
 
 if __name__ == '__main__':
-    file_name = 'cf_by_entity.xlsx'
-    select_function = select_sum_amount_group_by_entity
-    column_width = [32, 14, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_entity.xlsx'
+    # select_function = select_sum_amount_group_by_entity
+    # column_width = [32, 14, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
-    file_name = 'cf_by_article.xlsx'
-    select_function = select_sum_amount_group_by_article
-    column_width = [32, 0, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_article.xlsx'
+    # select_function = select_sum_amount_group_by_article
+    # column_width = [32, 0, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
-    file_name = 'cf_by_account.xlsx'
-    select_function = select_sum_amount_group_by_account
-    column_width = [8, 32, 18]
-    cf_to_excel(select_function, file_name, column_width)
+    # file_name = 'cf_by_account.xlsx'
+    # select_function = select_sum_amount_group_by_account
+    # column_width = [8, 32, 18]
+    # cf_to_excel(select_function, file_name, column_width)
 
     file_name = 'cf_by_account_entity.xlsx'
     select_function = select_sum_amount_group_by_account_entity
