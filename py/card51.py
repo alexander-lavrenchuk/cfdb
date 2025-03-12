@@ -1,8 +1,10 @@
 from config.config import *
 import pandas as pd
 import datetime
-from config.db_connection_config import host, port, user, password, db_name
-from sqlalchemy import create_engine, text
+# from config.db_connection_config import host, port, user, password, db_name
+from config.db_connection_config import host, user, password, db_name
+# from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 
 
 def get_card51_info(path_to_excel_card51: str) -> dict:
@@ -58,7 +60,7 @@ def get_card51_info(path_to_excel_card51: str) -> dict:
     return card51_info
 
 
-def get_card51_data(path_to_excel_card51: str) -> pd.core.frame.DataFrame:
+def get_card51_data(path_to_excel_card51: str) -> pd.DataFrame:
     first_data_row = card_rows['first_data_row'] - 1
     period_col = card_columns['period_col'] - 1
     document_col = card_columns['document_col'] - 1
@@ -112,7 +114,7 @@ def get_card51_data(path_to_excel_card51: str) -> pd.core.frame.DataFrame:
     return df
 
 
-def get_entites(df: pd.core.frame.DataFrame, fillna='n/a') -> set[str]:
+def get_entites(df: pd.DataFrame, fillna='n/a') -> set[str]:
     entities = set(df[df.debit_account == '51']. \
         credit_analytics_part_2.fillna(fillna))
     entities.update(df[df.credit_account == '51']. \
@@ -121,26 +123,26 @@ def get_entites(df: pd.core.frame.DataFrame, fillna='n/a') -> set[str]:
     return entities
 
 
-def get_income_articles(df: pd.core.frame.DataFrame) -> set[str]:
+def get_income_articles(df: pd.DataFrame) -> set[str]:
     articles = set(df[df.debit_account == '51'].debit_analytics_part_3)
 
     return articles
 
 
-def get_outcome_articles(df: pd.core.frame.DataFrame) -> set[str]:
+def get_outcome_articles(df: pd.DataFrame) -> set[str]:
     articles = set(df[df.credit_account == '51'].credit_analytics_part_3)
 
     return articles
 
 
-def get_accounts(df: pd.core.frame.DataFrame) -> set[str]:
+def get_accounts(df: pd.DataFrame) -> set[str]:
     accounts = set(df.debit_account)
     accounts.update(df.credit_account)
 
     return accounts
 
 
-def get_min_max_periods(df: pd.core.frame.DataFrame) -> tuple[datetime.date]:
+def get_min_max_periods(df: pd.DataFrame) -> tuple[datetime.date]:
     min_period = df.period_month.min()
     max_period = df.period_month.max()
 
@@ -149,7 +151,7 @@ def get_min_max_periods(df: pd.core.frame.DataFrame) -> tuple[datetime.date]:
 
 def get_periods(min_date: datetime.date,
                 max_date: datetime.date) \
-                    -> pd.core.frame.DataFrame:
+                    -> pd.DataFrame:
 
     df_periods = pd.DataFrame(
         columns=['period_name',
@@ -184,8 +186,8 @@ def get_periods(min_date: datetime.date,
 
 
 def get_outcomes(card51_info: dict, \
-    df: pd.core.frame.DataFrame) \
-        -> pd.core.frame.DataFrame:
+    df: pd.DataFrame) \
+        -> pd.DataFrame:
 
     df_outcomes = df[df['credit_account'] == '51']
 
@@ -246,8 +248,8 @@ def get_outcomes(card51_info: dict, \
 
 
 def get_incomes(card51_info: dict, \
-    df: pd.core.frame.DataFrame) \
-        -> pd.core.frame.DataFrame:
+    df: pd.DataFrame) \
+        -> pd.DataFrame:
 
     df_incomes = df[df['debit_account'] == '51']
 
