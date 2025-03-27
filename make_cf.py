@@ -8,7 +8,32 @@ from os.path import join, exists
 from os import remove
 import openpyxl
 from openpyxl.utils import get_column_letter
-from collections.abc import Callable
+# from collections.abc import Callable
+from collections import namedtuple
+from time import time
+
+field_names = [
+    'left_field',
+    'right_table',
+    'id',
+    'right_field',
+    'width',
+]
+
+ShowField = namedtuple(
+    typename='ShowFields',
+    field_names=field_names,
+    defaults=(None,) * len(field_names)
+)
+
+ReportParams = namedtuple(
+    typename='ReportParam',
+    field_names=[
+        'file_name',
+        'group_by',
+        'show_fields'
+    ]
+)
 
 
 def move_column(data_frame: pd.DataFrame,
@@ -21,496 +46,375 @@ def move_column(data_frame: pd.DataFrame,
         value=col)
 
 
-def select_sum_amount_group_by_entity(table_name: str) \
-        -> pd.DataFrame:
+def to_quoted_fields_string(fields: list[str]) -> str:
+    quoted_fields = \
+        ['`' + field + '`' for field in fields]
+    quoted_fields_string = ', '.join(quoted_fields)
+    return quoted_fields_string
 
-    sql_query = f'''
-        (SELECT
-            t1.period_name,
-            t3.entity_1C_name,
-            t3.inn,
-            SUM(t1.amount) AS `{table_name}`
-        FROM {table_name} AS t1
-        JOIN
-        (SELECT entity_id, SUM(amount) AS total
-        FROM {table_name}
-        GROUP BY entity_id
-        ORDER BY total DESC) AS t2
-        ON t2.entity_id = t1.entity_id
-        JOIN entities AS t3 ON t3.id = t1.entity_id
-        GROUP BY t1.period_name, t1.entity_id
-        ORDER BY t1.period_name, t2.total DESC)
-        UNION
-        (SELECT
-            period_name,
-            'Not specified' AS entity_1C_name,
-            'Not specified' AS inn,
-            SUM(amount)
-        FROM {table_name}
-        WHERE entity_id IS NULL
-        GROUP BY period_name);
-        '''
 
+def select_sum_group_by_fields(
+        table_name: str,
+        fields: list[str],
+        sum_field_name: str) -> pd.DataFrame:
+    group_by_fields = to_quoted_fields_string(fields)
+    sql_query = f"""
+        SELECT {group_by_fields},
+            SUM(`amount`) AS {sum_field_name}
+        FROM {table_name}
+        GROUP BY {group_by_fields};
+    """
     df = select_data(sql_query)
+    df[fields] = df[fields].fillna(-1)
     return df
 
 
-def select_sum_amount_group_by_article(table_name: str) \
-        -> pd.DataFrame:
+def cf_to_excel(
+        file_name: str,
+        group_by: list[str],
+        show_fields: list[ShowField],
+        value_cell_width: int,
+        perform_formatting: bool=True) -> None:
 
-    articles_table_name = 'income_articles' if 'ins_' in table_name \
-        else 'outcome_articles'
+    # appending_mode = False
+    activity_types = ('op', 'inv', 'fin', 'equity', 'vgo')
+    transaction_directions = ('ins', 'outs')
 
-    sql_query = f'''
-        (SELECT
-            t1.period_name,
-            t3.article_name AS `article_name`,
-            "",
-            SUM(t1.amount) AS `{table_name}`
-        FROM {table_name} AS t1
-        JOIN
-        (SELECT article_id, SUM(amount) AS total
-        FROM {table_name}
-        GROUP BY article_id
-        ORDER BY total DESC) AS t2
-        ON t2.article_id = t1.article_id
-        JOIN {articles_table_name} AS t3 ON t3.id = t1.article_id
-        GROUP BY t1.period_name, t1.article_id
-        ORDER BY t1.period_name, t2.total DESC)
-        UNION
-        (SELECT
-            period_name,
-            'Not specified' AS article_name,
-            "",
-            SUM(amount)
-        FROM {table_name}
-        WHERE article_id IS NULL
-        GROUP BY period_name);
-        '''
+    file_path = join(reports_directory_path, file_name)
+    if exists(file_path):
+        remove(file_path)
 
-    df = select_data(sql_query)
-    return df
+    for activity_type in activity_types:
+        for transaction_direction in transaction_directions:
+            table_name = f"{transaction_direction}_{activity_type}"
+            
+            fields=['period_name'] + group_by
+            sum_field_name = 'sum_by_all'
 
+            df = select_sum_group_by_fields(
+                table_name=table_name,
+                fields=fields,
+                sum_field_name=sum_field_name
+            )
 
-def select_sum_amount_group_by_account(table_name: str) \
-        -> pd.DataFrame:
+            df = pd.pivot_table(
+                data=df,
+                values=sum_field_name,
+                index=group_by,
+                columns='period_name',
+                aggfunc='sum',
+                fill_value=0,
+                margins=False,
+                sort=False)
 
-    sql_query = f'''
-        (SELECT
-            t1.period_name,
-            t1.account_id AS `account_id`,
-            t3.account_name AS `account_name`,
-            SUM(t1.amount) AS `{table_name}`
-        FROM {table_name} AS t1
-        JOIN
-        (SELECT account_id, SUM(amount) AS total
-        FROM {table_name}
-        GROUP BY account_id
-        ORDER BY total DESC) AS t2
-        ON t2.account_id = t1.account_id
-        JOIN accounts AS t3 ON t3.id = t1.account_id
-        GROUP BY t1.period_name, t1.account_id
-        ORDER BY t1.period_name, t2.total DESC)
-        UNION
-        (SELECT
-            period_name,
-            'Not specified' AS `account_id`,
-            'Not specified' AS `account_id`,
-            SUM(amount)
-        FROM {table_name}
-        WHERE account_id IS NULL
-        GROUP BY period_name);
-        '''
+            df = df.reset_index()
 
-    df = select_data(sql_query)
-    return df
+            dfs = []
+            columns_to_sort = []
+            for field_nums in range(len(group_by)):
+                fields = group_by[:field_nums + 1]
+                sum_field_name = 'sum_by_' + str(field_nums + 1)
+                columns_to_sort.append(sum_field_name)
 
+                dft = select_sum_group_by_fields(
+                    table_name=table_name,
+                    fields=fields,
+                    sum_field_name=sum_field_name
+                )
 
-def select_sum_amount_group_by_account_entity(table_name: str) \
-        -> pd.DataFrame:
+                df = df.merge(
+                    right=dft[[*fields, sum_field_name]],
+                    how='left',
+                    left_on=fields,
+                    right_on=fields
+                )
 
-    sql_query = f'''
-        SELECT
-            id,
-            account_name
-        FROM accounts;
-        '''
-    df_accounts = select_data(sql_query)
-    df_accounts.set_index(
-        keys='id',
-        inplace=True)
-    
-    sql_query = f'''
-        SELECT
-            id,
-            entity_1C_name,
-            inn
-        FROM entities;
-        '''
-    df_entities = select_data(sql_query)
-    df_entities.set_index(
-        keys='id',
-        inplace=True)
-    df_entities.inn = df_entities.inn.astype('str')
-    df_entities.inn = df_entities.inn.str.replace('.0', '')
-    df_entities.inn = df_entities.inn.str.replace('nan', '')
-    
-    sql_query = f'''
-        SELECT
-            period_name,
-            account_id,
-            entity_id,
-            SUM(amount) AS amount_sum
-        FROM {table_name}
-        GROUP BY period_name, account_id, entity_id;
-        '''
-    df_amounts = select_data(sql_query)
-    df_amounts.entity_id = df_amounts.entity_id.fillna(-1)
-    
-    sql_query = f'''
-        SELECT
-            account_id,
-            SUM(amount) AS amount_sum_by_account
-        FROM {table_name}
-        GROUP BY account_id
-        ORDER BY account_id;
-        '''
-    df_amounts_by_account = select_data(sql_query)
-    df_amounts_by_account.set_index(
-        keys='account_id',
-        inplace=True)
-    
-    sql_query = f'''
-        SELECT
-            account_id,
-            entity_id,
-            SUM(amount) AS amount_sum_by_account_entity
-        FROM {table_name}
-        GROUP BY account_id, entity_id
-        ORDER BY account_id, entity_id;
-        '''
-    df_amounts_by_account_entity = select_data(sql_query)
-    df_amounts_by_account_entity.entity_id = \
-        df_amounts_by_account_entity.entity_id.fillna(-1)
+                dfs.append(dft)
 
-    df_amounts_by_account_entity.set_index(
-        keys=['account_id', 'entity_id'],
-        inplace=True)
+            df.sort_values(
+                by=columns_to_sort,
+                ascending=[False] * len(group_by),
+                inplace=True)
 
-    dfp = pd.pivot_table(
-        data=df_amounts,
-        values='amount_sum',
-        index=['account_id', 'entity_id'],
-        columns='period_name',
-        aggfunc='sum',
-        fill_value=0,
-        margins=False,
-        sort=False)
+            columns_to_drop = group_by.copy()
 
-    dfp = dfp.join(
-        other=df_amounts_by_account,
-        on='account_id',
-        validate='m:1')
+            for field in show_fields:
+                if not field.right_table:
+                    columns_to_drop.remove(field.left_field)
+                    continue
 
-    dfp = dfp.join(
-        other=df_amounts_by_account_entity,
-        validate='m:1')
+                if type(field.right_table) == str:
+                    right_table = field.right_table
+                else:
+                    right_table = field.right_table[transaction_direction == 'outs']
 
-    dfp.sort_values(
-        by=['amount_sum_by_account', 'amount_sum_by_account_entity'],
-        ascending=[False, False],
-        inplace=True)
+                sql_query = f"""
+                    SELECT
+                        `{field.id}`,
+                        `{field.right_field}`
+                    FROM `{right_table}`;
+                """
+                dft = select_data(sql_query)
+                df = df.merge(
+                    right=dft,
+                    how='left',
+                    left_on=field.left_field,
+                    right_on=field.id
+                )
+                df.drop(columns=field.id, inplace=True)
+                df[field.right_field] = df[field.right_field].fillna('')
 
-    dfp.reset_index(inplace=True)
+            df.drop(columns=columns_to_drop, inplace=True)
+            df.drop(columns=columns_to_sort, inplace=True)
 
-    dfp = dfp.merge(
-        right=df_accounts,
-        how='left',
-        left_on='account_id',
-        right_on='id',
-        validate='m:1')
-    dfp.entity_id = dfp.entity_id.astype('int')
+            df_periods = select_data('SELECT period_name FROM periods;')
+            all_periods_set = set(df_periods.period_name)
+            missing_periods_set = all_periods_set - set(df.columns)
+            if len(missing_periods_set) > 0:
+                for period in missing_periods_set:
+                    df.insert(loc=df.shape[1], column=period, value=0)
 
-    dfp = dfp.merge(
-        right=df_entities,
-        how='left',
-        left_on='entity_id',
-        right_on='id',
-        validate='m:1')
-    
-    dfp.drop(columns=['entity_id', 'amount_sum_by_account'],
-        inplace=True)
+            # columns_num_to_sum = df.shape[1]-len(show_fields)
 
-    dfp_totals = dfp.sum(axis=0,
-        numeric_only=True).to_frame('All').T
-    dfp = pd.concat([dfp_totals, dfp])
-    dfp.loc['All'] = dfp.loc['All'].fillna('')
+            df.sort_index(
+                axis=1,
+                inplace=True)
+            
+            field_names = []
+            for field in show_fields:
+                field_names.append((field.right_field, field.left_field)[field.right_field is None])
+            df.set_index(keys=field_names, inplace=True)
 
-    df_periods = select_data('SELECT period_name FROM periods;')
-    all_periods_set = set(df_periods.period_name)
-    missing_periods_set = all_periods_set - set(dfp.columns)
-    if len(missing_periods_set) > 0:
-        for period in missing_periods_set:
-            dfp.insert(loc=dfp.shape[1], column=period, value=0)
+            df_total_row = df.sum(axis=0).to_frame().T
+            for field_name in field_names:
+                df_total_row[field_name] = pd.Series('All')
 
-    dfp.rename(
-        columns={'amount_sum_by_account_entity': 'All'},
-        inplace=True)
+            df_total_row.set_index(keys=field_names, inplace=True)
 
-    dfp.sort_index(
-        axis=1,
-        inplace=True)
+            df = pd.concat([df_total_row, df])
 
-    move_column(data_frame=dfp,
-        column_name='account_id',
-        loc=0)
-    dfp.iloc[0, 0] = 'All'
+            df['All'] = df.sum(axis=1)
+            
+            df.reset_index(names=field_names, inplace=True)
 
-    move_column(data_frame=dfp,
-        column_name='account_name',
-        loc=1)
+            writer_mode = 'a' if exists(file_path) else 'w'
+            if transaction_direction == 'ins':
+                sheet_behaviour = None
+                header = True
+                startrow = 1
+            else:
+                sheet_behaviour = 'overlay'
+                header = False
+                startrow = writer.sheets[activity_type].max_row + 1
 
-    move_column(data_frame=dfp,
-        column_name='entity_1C_name',
-        loc=2)
+            with pd.ExcelWriter(
+                file_path,
+                mode=writer_mode,
+                if_sheet_exists=sheet_behaviour) as writer:  
 
-    move_column(data_frame=dfp,
-        column_name='inn',
-        loc=3)
+                df.to_excel(
+                    writer,
+                    sheet_name=activity_type,
+                    float_format='%.2f',
+                    index=False,
+                    header=header,
+                    startrow=startrow,
+                    freeze_panes=(1, 4)
+                )
+            
+        if perform_formatting:
+            format_sheet(
+                wb_path=file_path,
+                show_fields=show_fields,
+                value_cell_width=value_cell_width
+            )
 
-    return dfp
+    print(f'CF model saved to {file_path}')
 
 
-def pivot_and_sort_data_frame_with_single_analytics(
-        df: pd.DataFrame) \
-        -> pd.DataFrame:
+def format_sheet(
+        wb_path: str,
+        show_fields: list[ShowField],
+        value_cell_width: int
+        ) -> None:
 
-    beg_date, end_date = get_min_max_dates()
-    df_periods = get_periods(beg_date, end_date)
-
-    dfm = df_periods.merge(df, how='outer', on=['period_name'])
-    column_numbers = dfm.shape[1]
-    dfm.iloc[:, column_numbers - 3] = \
-        dfm.iloc[:, column_numbers - 3].fillna('Not specified')
-    dfm.iloc[:, column_numbers - 2] = \
-        dfm.iloc[:, column_numbers - 2].fillna('Not specified')
-    dfm.iloc[:, column_numbers - 1] = \
-        dfm.iloc[:, column_numbers - 1].fillna(0)
-
-    columns = dfm.columns.tolist()
-    periods = columns[0]
-    analytics_id = columns[3]
-    analytics_name = columns[4]
-    values = columns[5]
-
-    dfp = dfm.pivot_table(
-        index=[analytics_id, analytics_name],
-        columns=periods,
-        values=values,
-        aggfunc='sum',
-        fill_value=0,
-        margins=True)
-    dfp = dfp.sort_values('All', ascending=False, axis=0)
-
-    # remove rows with only zeroes
-    dfp = dfp[~(dfp == 0).all(axis=1)]
-
-    return dfp
-
-
-def format_sheet(wb_path: str, sh_name: str, column_width: list[int]) -> None:
     wb = openpyxl.load_workbook(wb_path)
-    sh = wb[sh_name]
 
-    for col in range(1, 3):
-        width = column_width[col - 1]
-        if width > 0:
-            sh.column_dimensions[get_column_letter(col)].width = width
-        else:
-            sh.column_dimensions[get_column_letter(col)].hidden = True
+    for sh_name in wb.sheetnames:
+        sh = wb[sh_name]
 
-    min_row = 1
-    max_row = sh.max_row
-    min_col = 3
-    max_col = sh.max_column
-    cell_range = sh.iter_cols(
-        min_row=min_row,
-        max_row=max_row,
-        min_col=min_col,
-        max_col=max_col)
+        min_row = 1
+        max_row = sh.max_row
+        min_col = len(show_fields) + 1
+        max_col = sh.max_column
+        cell_range = sh.iter_cols(
+            min_row=min_row,
+            max_row=max_row,
+            min_col=min_col,
+            max_col=max_col
+        )
 
-    for row in range(min_row, max_row + 1):
-        sh['A' + str(row)].alignment = \
-            openpyxl.styles.Alignment(horizontal='left')
+        for col in range(1, min_col):
+            width = show_fields[col - 1].width
+            if width > 0:
+                sh.column_dimensions[get_column_letter(col)].width = width
+            else:
+                sh.column_dimensions[get_column_letter(col)].hidden = True
 
-        sh['B' + str(row)].alignment = \
-            openpyxl.styles.Alignment(horizontal='left')
+        for row in range(min_row, max_row + 1):
+            for col_idx in range(1, min_col):
+                sh[chr(ord('A') + col_idx - 1) + str(row)].alignment = \
+                    openpyxl.styles.Alignment(horizontal='left')
 
-    for col in range(min_col, max_col + 1):
-        sh.column_dimensions[get_column_letter(col)].width = column_width[2]
+        for col in range(min_col, max_col + 1):
+            sh.column_dimensions[get_column_letter(col)].width = value_cell_width
 
-    for row in cell_range:
-        for cell in row:
-            cell.number_format = '#,##0.00'
-
-    wb.save(wb_path)
-
-
-def format_sheet2(wb_path: str, sh_name: str, column_width: list[int]) -> None:
-    wb = openpyxl.load_workbook(wb_path)
-    sh = wb[sh_name]
-
-    for col in range(1, 5):
-        width = column_width[col - 1]
-        if width > 0:
-            sh.column_dimensions[get_column_letter(col)].width = width
-        else:
-            sh.column_dimensions[get_column_letter(col)].hidden = True
-
-    min_row = 1
-    max_row = sh.max_row
-    min_col = 5
-    max_col = sh.max_column
-    cell_range = sh.iter_cols(
-        min_row=min_row,
-        max_row=max_row,
-        min_col=min_col,
-        max_col=max_col)
-
-    for row in range(min_row, max_row + 1):
-        sh['A' + str(row)].alignment = \
-            openpyxl.styles.Alignment(horizontal='left')
-
-        sh['B' + str(row)].alignment = \
-            openpyxl.styles.Alignment(horizontal='left')
-
-
-        sh['C' + str(row)].alignment = \
-            openpyxl.styles.Alignment(horizontal='left')
-
-        sh['D' + str(row)].alignment = \
-            openpyxl.styles.Alignment(horizontal='left')
-
-    for col in range(min_col, max_col + 1):
-        sh.column_dimensions[get_column_letter(col)].width = column_width[4]
-
-    for row in cell_range:
-        for cell in row:
-            cell.number_format = '#,##0.00'
+        for row in cell_range:
+            for cell in row:
+                cell.number_format = '#,##0.00'
 
     wb.save(wb_path)
     wb.close()
 
 
-def cf_to_excel(
-    select_function: Callable[[str], pd.core.frame.DataFrame],
-    file_name: str, column_width: list[int]) -> None:
-
-    file_path = join(reports_directory_path, file_name)
-    if exists(file_path):
-        remove(file_path)
-     
-    activities = ['op', 'inv', 'fin', 'equity', 'vgo']
-
-    for activity in activities:
-        cf_ins = 'ins_' + activity
-        df_ins = select_function(cf_ins)
-        dfp_ins = pivot_and_sort_data_frame_with_single_analytics(df_ins)
-
-        writer_mode = 'a' if exists(file_path) else 'w'
-        with pd.ExcelWriter(file_path, mode=writer_mode) as writer:  
-            dfp_ins.to_excel(
-                writer,
-                sheet_name=activity,
-                freeze_panes=(1, 2))
-        
-        cf_outs = 'outs_' + activity
-        df_outs = select_function(cf_outs)
-        dfp_outs = pivot_and_sort_data_frame_with_single_analytics(df_outs)
-        start_row = writer.sheets[activity].max_row + 1
-
-        writer_mode = 'a'
-        with pd.ExcelWriter(file_path, mode=writer_mode,
-                if_sheet_exists='overlay') as writer:  
-            dfp_outs.to_excel(
-                writer,
-                sheet_name=activity,
-                header=False,
-                startrow=start_row)
-
-        format_sheet(wb_path=file_path,
-            sh_name=activity,
-            column_width=column_width)
-
-    print(f'CF model saved to {file_path}')
-
-
-def cf_to_excel2(
-    select_function: Callable[[str], pd.core.frame.DataFrame],
-    file_name: str, column_width: list[int]) -> None:
-
-    file_path = join(reports_directory_path, file_name)
-    if exists(file_path):
-        remove(file_path)
-     
-    activities = ['op', 'inv', 'fin', 'equity', 'vgo']
-
-    for activity in activities:
-        cf_ins = 'ins_' + activity
-        dfp_ins = select_function(cf_ins)
-
-        writer_mode = 'a' if exists(file_path) else 'w'
-        with pd.ExcelWriter(file_path, mode=writer_mode) as writer:  
-            dfp_ins.to_excel(
-                writer,
-                sheet_name=activity,
-                float_format='%.2f',
-                index=False,
-                freeze_panes=(1, 4))
-        
-        cf_outs = 'outs_' + activity
-        dfp_outs = select_function(cf_outs)
-        
-        start_row = writer.sheets[activity].max_row + 1
-
-        writer_mode = 'a'
-        with pd.ExcelWriter(file_path, mode=writer_mode,
-                if_sheet_exists='overlay') as writer:  
-            dfp_outs.to_excel(
-                writer,
-                sheet_name=activity,
-                float_format='%.2f',
-                index=False,
-                header=False,
-                startrow=start_row)
-
-        format_sheet2(wb_path=file_path,
-            sh_name=activity,
-            column_width=column_width)
-
-    print(f'CF model saved to {file_path}')
+def fix_time(start_time: float) -> str:
+    duration_in_seconds = time() - start_time
+    hh, ss = divmod(duration_in_seconds, 3600)
+    mm, ss = divmod(ss, 60)
+    ss, ms = divmod(ss, 1)
+    hh, mm, ss, ms = map(int, [hh, mm, ss, 1000 * ms])
+    time_elapsed_string = f"{(hh):02d}:{(mm):02d}:{(ss):02d}.{(ms):03d}"
+    return time_elapsed_string
 
 
 if __name__ == '__main__':
-    # file_name = 'cf_by_entity.xlsx'
-    # select_function = select_sum_amount_group_by_entity
-    # column_width = [32, 14, 18]
-    # cf_to_excel(select_function, file_name, column_width)
+    start_time = time()
+    
+    account_id = ShowField(
+        left_field='account_id',
+        width=8
+    )
+    
+    account_name = ShowField(
+        left_field='account_id',
+        right_table='accounts',
+        id='id',
+        right_field='account_name',
+        width=32
+    )
+    
+    entity_1C_name = ShowField(
+        left_field='entity_id',
+        right_table='entities',
+        id='id',
+        right_field='entity_1C_name',
+        width=32
+    )
+    
+    inn = ShowField(
+        left_field='entity_id',
+        right_table='entities',
+        id='id',
+        right_field='inn',
+        width=14
+    )
+    
+    full_name = ShowField(
+        left_field='entity_id',
+        right_table='entities',
+        id='id',
+        right_field='full_name',
+        width=32
+    )
+    
+    article_name = ShowField(
+        left_field='article_id',
+        right_table=['income_articles', 'outcome_articles'],
+        id='id',
+        right_field='article_name',
+        width=32
+    )
 
-    # file_name = 'cf_by_article.xlsx'
-    # select_function = select_sum_amount_group_by_article
-    # column_width = [32, 0, 18]
-    # cf_to_excel(select_function, file_name, column_width)
+    value_cell_width = 18
 
-    # file_name = 'cf_by_account.xlsx'
-    # select_function = select_sum_amount_group_by_account
-    # column_width = [8, 32, 18]
-    # cf_to_excel(select_function, file_name, column_width)
+    params = []
 
-    file_name = 'cf_by_account_entity.xlsx'
-    select_function = select_sum_amount_group_by_account_entity
-    column_width = [8, 32, 34, 14, 18]
-    cf_to_excel2(select_function, file_name, column_width)
+    report_params = ReportParams(
+        file_name = 'cf_by_entity.xlsx',
+        group_by = ['entity_id'],
+        show_fields = [entity_1C_name, inn]
+    )
+    params.append(report_params)
 
-    # raise KeyboardInterrupt
+    report_params = ReportParams(
+        file_name = 'cf_by_account.xlsx',
+        group_by = ['account_id'],
+        show_fields = [account_id, account_name]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_article.xlsx',
+        group_by = ['article_id'],
+        show_fields = [article_name]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_account_entity.xlsx',
+        group_by = ['account_id', 'entity_id'],
+        show_fields = [account_id, account_name, entity_1C_name, inn]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_entity_account.xlsx',
+        group_by = ['entity_id', 'account_id'],
+        show_fields = [entity_1C_name, inn, account_id, account_name]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_article_entity.xlsx',
+        group_by = ['article_id', 'entity_id'],
+        show_fields = [article_name, entity_1C_name, inn]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_entity_article.xlsx',
+        group_by = ['entity_id', 'article_id'],
+        show_fields = [entity_1C_name, inn, article_name]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_account_article.xlsx',
+        group_by = ['account_id', 'article_id'],
+        show_fields = [account_id, account_name, article_name]
+    )
+    params.append(report_params)
+
+    report_params = ReportParams(
+        file_name = 'cf_by_article_account.xlsx',
+        group_by = ['article_id', 'account_id'],
+        show_fields = [article_name, account_id, account_name]
+    )
+    params.append(report_params)
+
+    for report_params in params:
+        print(f"Generating report {report_params.file_name}")
+        report_time = time()
+        cf_to_excel(
+            file_name=report_params.file_name,
+            group_by=report_params.group_by,
+            show_fields=report_params.show_fields,
+            value_cell_width=value_cell_width,
+            perform_formatting=True
+        )
+        time_elapsed = fix_time(report_time)
+        print(f"Done in {time_elapsed} seconds")
+        print()
+
+    print(f"Total time elapsed {fix_time(start_time)} seconds")
 
